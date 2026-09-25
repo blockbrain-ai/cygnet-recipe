@@ -23,7 +23,10 @@ on any option). The L40S run pinned the weights to revision `707f0a3b8a3c7ad586e
 run fetched the repository's main branch without recording a revision. Both runs' per-item results, CLI manifests
 and hashes are in `runs/` and `PROVENANCE.md`.
 
-**Identity check for an evaluator:** a correct setup reproduces 203/231 with the tier split above.
+**Identity check for an evaluator:** a correct setup reproduces 203/231 with the tier split above, or 204/231 with
+hard 86/111. One public item, `hard-sol-a-multi_hop-07`, sits on a near-tie between two options, and GPU batch order
+can flip it: a third run with the pinned revision on an RTX A6000 (`runs/a6000-pinned/`) scored 204/231 and gave the
+same answer as both runs above on the other 230 items.
 
 ## Run it
 
