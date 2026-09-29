@@ -78,6 +78,68 @@ vLLM failure is a 502, which counts toward the runner's three-consecutive-failur
 
 **Tests** (no GPU): `python3 shim/test_shim.py`.
 
+## Serving applications
+
+`shim/cygnet_shim.py` is the file the figures above were measured with, and it stays as it is. For applications,
+`shim/decision_server.py` serves the same readout on the same API (`POST /v1/systemone`, `GET /v1/models`) and adds
+what an application needs; clients of this API only need its base URL changed. Start it in place of step 2:
+
+```bash
+SHIM_VLLM=http://127.0.0.1:8890/v1/chat/completions SHIM_MODEL=cygnet SHIM_TEMPERATURE=3.4 CYGNET_PORT=8010 \
+python3 shim/decision_server.py
+```
+
+- **Every question in a request is answered**, under the name the caller gave it. Names never reach the model; each
+  question is read in its own pass, and questions run concurrently.
+- **Answers:** a Choice returns `choice`, `probabilities` and `confidence`; a Score returns `score` (the
+  probability-weighted level), `legend`, level-keyed `probabilities` and `confidence`; a Noul returns `noul`, the
+  probability of yes. `confidence` is `(K · p_max − 1) / (K − 1)` over the K options or levels. Usage is
+  `input_tokens` and `output_tokens`.
+- **Noul criteria are optional.** The two options are always shown "false" first, the order the figures above were
+  measured in, whatever order a request gives them.
+- **Descriptions** may be text, JSON or null. Text is shown as it is; JSON follows the option name; a null Choice
+  description shows the option name.
+- **Up to 255 options.** Up to 20 are read in one pass (vLLM returns 20 log-probabilities). Past that the options are
+  read in groups of near-equal size, then once more over the group winners, each with its own description:
+  `P(option) = P(its group's winner) × P(option | its group)`, with the temperature applied once to the result. That
+  is `ceil(K / 20) + 1` passes. The calibration temperature was fitted on single-pass reads; on grouped reads it
+  lowered calibration error on 77 options and raised it on 150 (below), so it is not established there.
+- On one question with at most 20 options, text descriptions and noul options given false first, it returns exactly
+  what the benchmark shim returns (`shim/test_decision_server.py` checks this on every question type).
+
+| setting | default | |
+|---|---|---|
+| `CYGNET_HOST`, `CYGNET_PORT` | `127.0.0.1`, `8010` | listen address |
+| `CYGNET_API_KEY` | unset | when set, requests need `Authorization: Bearer <key>` (401 otherwise); without it the server will not listen beyond localhost |
+| `CYGNET_ALLOW_NO_KEY` | unset | `1` lets it listen beyond localhost without a key, when something in front of it checks access |
+| `CYGNET_MAX_PARALLEL` | 8 | vLLM requests in flight at once, across all requests and group passes; vLLM batches them |
+| `CYGNET_GROUP_SIZE` | 20 | options read in one pass; 13 to 20, so that 255 options fit in one final pass |
+| `CYGNET_MAX_BODY` | 16777216 | largest request body, in bytes (16 MiB) |
+| `CYGNET_MODEL_NAME`, `CYGNET_MODEL_DESCRIPTION`, `CYGNET_MODEL_RELEASE_DATE` | `SHIM_MODEL`, … | what `GET /v1/models` lists |
+
+**Status codes.** 401 without a valid key; 422 for a request the API does not accept (an unknown question type, more
+than 255 options or 10 levels, over the context limit); vLLM's 401, 403 and 429 pass through ahead of a 422 in the same
+request, since they concern the server; any other vLLM failure is a 502; 400 for a body that is not JSON, 411 without
+a `Content-Length`, 413 over `CYGNET_MAX_BODY`. Errors are `{"error": "<message>"}`.
+
+**Measured on the real model** (one H100 NVL, the settings above; `checks/decision-server/`):
+
+- JevBench's CLI scored 203/231 through the decision server, with the same probabilities as the benchmark shim on all
+  231 items.
+- Grouped reads on 400 BANKING77 test messages with 20 intents each: 87.00 % grouped against 86.50 % in one pass (same
+  option chosen on 373). All 77 BANKING77 intents: 73.50 %; all 150 CLINC150 intents: 91.25 %.
+- Expected calibration error at T 3.4 against T 1: 0.067 against 0.249 on 77 intents, 0.171 against 0.074 on 150,
+  where confidence sits below accuracy.
+- Latency with 20 options: 0.062 s p50 for one client; 38.5 requests/s at 0.209 s p50 for 8 clients. With 77 options
+  (5 passes): 0.193 s p50 for one client.
+
+`python3 shim/test_decision_server.py` tests the server against a stand-in for vLLM (no GPU). Deployments are subject to
+Google's Gemma Prohibited Use Policy (`NOTICE.md`).
+
+**Serving on other backends:** forward `chat_template_kwargs: {"enable_thinking": false}` unchanged. llama.cpp turns
+thinking on by default, which overrides Gemma-4's template; in a reproduction reported by @notf0und in issue #1 the answer
+position was then led by a thinking marker and the easy tier fell from 48/48 to 42/48.
+
 ## How the readout works
 
 For each decision the shim sends one chat request with the state, the instructions and the options lettered A, B,

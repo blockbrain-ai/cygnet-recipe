@@ -1,0 +1,17 @@
+{
+ "seed": 20260929,
+ "sources": {
+  "banking77-test.csv": "d12d6e3bc4c3103966ae786dc435913c0c563dfa328f5a3646d0e62cfeeb474d",
+  "clinc150-data_full.json": "36923c3705a59e08fe9c3883d8bc2dd966ef93e22cb78ac41171782a698d56e0"
+ },
+ "files": {
+  "items-b77.jsonl": "5e574a4895df4abc2a179cc99264a7ccf4627aa2dae58c10c2ea5b2bd298c702",
+  "items-c150.jsonl": "5471cbb6552973c27e527f9b3dd5bab28443a946a14d4e6420b45938ca719899",
+  "items-b20.jsonl": "c55c74dac166b2ef629cc7bfccb1457e07f312cfe44a47c523b4815261e295d1",
+  "items-load-c1.jsonl": "88f84e63bdc64911d6e31413c5b9d6908c40276b87c5c1395820dcf3a1342f17",
+  "items-load-c2.jsonl": "729adf01ad8f59bd5af300ab7c5004cd6c2688882e7016723106345d4c5305be",
+  "items-load-c3.jsonl": "404cee9e118a5cf41b196a48b982f7883503307a4dda0438d5a46f488923f863",
+  "items-load-c4.jsonl": "9a419def8b68f105527bd9de97ed3fd728552931f906c17e1257b8b82dab83f3",
+  "items-load-c5.jsonl": "463e5a3ee1fae739ca9a1b0fdf43c4bc2b9810aa451a6a1b310e2b6d382763c4"
+ }
+}
