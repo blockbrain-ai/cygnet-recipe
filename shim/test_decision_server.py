@@ -45,6 +45,7 @@ class FakeVLLM(BaseHTTPRequestHandler):
     lock = threading.Lock()
     served_id = "mock"
     max_model_len = 262144
+    in_flight = peak = 0
 
     def log_message(self, *a):
         pass
@@ -65,6 +66,18 @@ class FakeVLLM(BaseHTTPRequestHandler):
         text = req["messages"][-1]["content"]
         with FakeVLLM.lock:
             FakeVLLM.prompts.append(text)
+            FakeVLLM.in_flight += 1
+            FakeVLLM.peak = max(FakeVLLM.peak, FakeVLLM.in_flight)
+        try:
+            if "MOCK_SLOW" in text:
+                import time
+                time.sleep(0.2)
+            self._answer(req, text)
+        finally:
+            with FakeVLLM.lock:
+                FakeVLLM.in_flight -= 1
+
+    def _answer(self, req, text):
         allowed = req["structured_outputs"]["choice"]
         if "MOCK_OVERFLOW" in text:
             return self._send(400, {"error": {"message": OVERFLOW, "code": 400}})
@@ -163,16 +176,28 @@ for T in (1.0, 2.0):
     same = 0
     for qtype, criteria, marker in cases:
         q = {"type": qtype, "instructions": f"Decide. {marker}", "criteria": criteria}
-        for state in ("plain state", {"order": {"id": "A-17", "paid_with": "gift card"}}):
+        for state in ("plain state", {"order": {"id": "A-17", "paid_with": "gift card"}}, "", {}, []):
             s1, b1 = call(frozen_port, "/v1/systemone", {"state": state, "questions": {"decision": q}})
+            p1 = FakeVLLM.prompts[-1]
             s2, b2 = call(server_port, "/v1/systemone", {"state": state, "questions": {"decision": q}})
+            p2 = FakeVLLM.prompts[-1]
             a1, a2 = b1["answers"]["decision"], b2["answers"]["decision"]
-            ok = s1 == s2 == 200 and (a1["noul"] == a2["noul"] if qtype == "noul" else a1["probabilities"] == a2["probabilities"])
+            ok = s1 == s2 == 200 and p1 == p2 and (
+                a1["noul"] == a2["noul"] if qtype == "noul" else a1["probabilities"] == a2["probabilities"])
             same += ok
             if not ok:
                 print("   differs:", qtype, marker, a1, a2)
-    check(f"identity with cygnet_shim at T {T}: {same} of {2 * len(cases)} questions give exactly the same probabilities",
-          same == 2 * len(cases))
+    check(f"identity with cygnet_shim at T {T}: {same} of {5 * len(cases)} questions send the same prompt and give exactly "
+          f"the same probabilities (text, JSON, empty text, empty object and empty list states)", same == 5 * len(cases))
+same = 0
+for instructions in (None, ""):
+    q = {"type": "choice", "instructions": instructions, "criteria": options(3)}
+    s1, b1 = call(frozen_port, "/v1/systemone", {"state": "s", "questions": {"decision": q}})
+    p1 = FakeVLLM.prompts[-1]
+    s2, b2 = call(server_port, "/v1/systemone", {"state": "s", "questions": {"decision": q}})
+    same += s1 == s2 == 200 and p1 == FakeVLLM.prompts[-1] and (
+        b1["answers"]["decision"]["probabilities"] == b2["answers"]["decision"]["probabilities"])
+check("null and empty instructions send the same prompt as cygnet_shim", same == 2)
 frozen.TEMPERATURE = server.shim.TEMPERATURE = 1.0
 
 # ---- 2. the API
@@ -249,6 +274,9 @@ check("a request with one over-context question and one fine question is a 422",
 check("a request with one over-context question and one vLLM failure is a 422 (the error a retry cannot fix)",
       ask({"a": {"type": "choice", "instructions": "MOCK_500", "criteria": options(3)},
            "b": {"type": "choice", "instructions": "MOCK_OVERFLOW", "criteria": options(3)}})[0] == 422)
+check("vLLM's 429 passes through ahead of a 422 in the same request",
+      ask({"a": {"type": "choice", "instructions": "MOCK_OVERFLOW", "criteria": options(3)},
+           "b": {"type": "choice", "instructions": "MOCK_429", "criteria": options(3)}})[0] == 429)
 check("vLLM 429 passes through", ask({"q": {"type": "choice", "instructions": "MOCK_429", "criteria": options(3)}})[0] == 429)
 check("vLLM 500 is a 502", ask({"q": {"type": "choice", "instructions": "MOCK_500", "criteria": options(3)}})[0] == 502)
 st, b = call(server_port, "/v1/models")
@@ -279,6 +307,47 @@ st, b = ask({f"q{i}": {"type": "choice", "instructions": f"Pick. MOCK_PICK={p}",
 check("12 questions run concurrently and each gets its own answer",
       st == 200 and all(b["answers"][f"q{i}"]["choice"] == f"label_{i}" for i in range(12)), b)
 
+import socket
+import subprocess
+
+
+def raw_post(head):
+    """Send a request head exactly as given (no body), return the status code."""
+    with socket.create_connection(("127.0.0.1", server_port), timeout=10) as c:
+        c.sendall(head.encode())
+        return int(c.recv(4096).split(b" ", 2)[1])
+
+
+check("a POST without Content-Length is a 411", raw_post("POST /v1/systemone HTTP/1.1\r\nHost: x\r\n\r\n") == 411)
+check("a POST with a bad Content-Length is a 400",
+      raw_post("POST /v1/systemone HTTP/1.1\r\nHost: x\r\nContent-Length: -5\r\n\r\n") == 400)
+
+
+def start(env):
+    """Start the server with extra environment and expect it to stop at once; (return code, stderr)."""
+    try:
+        r = subprocess.run([sys.executable, os.path.join(HERE, "decision_server.py")], env={**os.environ, **env},
+                           capture_output=True, text=True, timeout=10)
+    except subprocess.TimeoutExpired:
+        return None, "it started and kept running"
+    return r.returncode, r.stderr
+
+
+rc, err = start({"CYGNET_GROUP_SIZE": "12", "CYGNET_PORT": "1"})
+check("CYGNET_GROUP_SIZE 12 is refused: 255 options would need 22 group winners in one final pass",
+      rc != 0 and "CYGNET_GROUP_SIZE must be between 13 and 20" in err, err[-200:])
+rc, err = start({"CYGNET_HOST": "192.0.2.1", "CYGNET_API_KEY": "", "CYGNET_PORT": "1"})   # a documentation address
+check("the server refuses to listen beyond localhost without CYGNET_API_KEY", rc != 0 and "refusing to listen" in err, err[-200:])
+
+server._in_flight = threading.BoundedSemaphore(2)
+FakeVLLM.peak = 0
+st, b = ask({f"q{i}": {"type": "choice", "instructions": f"Pick. MOCK_SLOW MOCK_PICK={p}", "criteria": options(12)}
+             for i, p in enumerate("ABCDEFGH")} | {"big": {"type": "choice", "instructions": "MOCK_SLOW MOCK_TARGET=zebra",
+                                                            "criteria": options(45, "zebra", 30)}})
+check(f"CYGNET_MAX_PARALLEL caps vLLM requests in flight across questions and group passes (peak {FakeVLLM.peak}, cap 2)",
+      st == 200 and FakeVLLM.peak <= 2 and b["answers"]["big"]["choice"] == "label_30", (st, FakeVLLM.peak))
+server._in_flight = threading.BoundedSemaphore(server.MAX_PARALLEL)
+
 # ---- 3. the grouped readout
 G = server.GROUP_SIZE
 for K in (21, 40, 64, 255):
@@ -300,13 +369,38 @@ ask({"q": {"type": "choice", "instructions": "x MOCK_TARGET=zebra", "criteria": 
 sizes = sorted(len(option_lines(p)) for p in FakeVLLM.prompts)
 check(f"21 options are read as groups of near-equal size, then the winners: pass sizes {sizes}", sizes == [2, 10, 11])
 
-# composition against the stand-in's own softmax over all options (it scores each option independently)
+# composition against a reference computed independently from the stand-in's scoring rule
+def softmax(v):
+    m = max(v); e = [math.exp(x - m) for x in v]; t = sum(e)
+    return [x / t for x in e]
+
+
+def reference(K, at):
+    """What the grouped readout must return for the stand-in: near-equal groups, a softmax per group over the
+    stand-in's logits (0 or -4 by content, minus 0.01 per position in the pass), the winners' softmax the same way,
+    P(option) = P(winner of its group) x P(option | group)."""
+    m = -(-K // G); bounds = [round(i * K / m) for i in range(m + 1)]
+    base = [0.0 if i == at else -4.0 for i in range(K)]
+    within, winners = [], []
+    for g in range(m):
+        idx = list(range(bounds[g], bounds[g + 1]))
+        p = softmax([base[i] - 0.01 * j for j, i in enumerate(idx)])
+        within.append((idx, p)); winners.append(idx[max(range(len(idx)), key=lambda j: p[j])])
+    q = softmax([base[w] - 0.01 * g for g, w in enumerate(winners)])
+    out = {f"label_{i}": q[g] * pi for g, (idx, p) in enumerate(within) for i, pi in zip(idx, p)}
+    s = sum(out.values())
+    return {k: v / s for k, v in out.items()}
+
+
+for K, at in ((21, 20), (64, 40), (255, 3)):
+    st, b = ask({"q": {"type": "choice", "instructions": "x MOCK_TARGET=zebra", "criteria": options(K, "zebra", at)}})
+    got, want = b["answers"]["q"]["probabilities"], reference(K, at)
+    err = max(abs(got[k] - want[k]) for k in want)
+    check(f"{K} options: the composed probabilities equal an independent reference computation (largest difference {err:.1e})",
+          err < 1e-12 and set(got) == set(want), err)
 K, at = 64, 40
 st, b = ask({"q": {"type": "choice", "instructions": "x MOCK_TARGET=zebra", "criteria": options(K, "zebra", at)}})
-logit = [(0.0 if i == at else -4.0) - 0.01 * (i % G) for i in range(K)]
 got = b["answers"]["q"]["probabilities"]
-check(f"{K} options: the composed probabilities sum to 1 and put the stand-in's winner first",
-      abs(sum(got.values()) - 1) < 1e-9 and max(got, key=got.get) == f"label_{at}", got)
 server.shim.TEMPERATURE = 2.0
 st, b2 = ask({"q": {"type": "choice", "instructions": "x MOCK_TARGET=zebra", "criteria": options(K, "zebra", at)}})
 server.shim.TEMPERATURE = 1.0

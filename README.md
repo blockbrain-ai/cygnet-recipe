@@ -109,10 +109,17 @@ python3 shim/decision_server.py
 | setting | default | |
 |---|---|---|
 | `CYGNET_HOST`, `CYGNET_PORT` | `127.0.0.1`, `8010` | listen address |
-| `CYGNET_API_KEY` | unset | when set, requests need `Authorization: Bearer <key>` (401 otherwise); set it before listening beyond localhost |
-| `CYGNET_MAX_PARALLEL` | 8 | concurrent passes; vLLM batches them |
-| `CYGNET_GROUP_SIZE` | 20 | options read in one pass |
+| `CYGNET_API_KEY` | unset | when set, requests need `Authorization: Bearer <key>` (401 otherwise); without it the server will not listen beyond localhost |
+| `CYGNET_ALLOW_NO_KEY` | unset | `1` lets it listen beyond localhost without a key, when something in front of it checks access |
+| `CYGNET_MAX_PARALLEL` | 8 | vLLM requests in flight at once, across all requests and group passes; vLLM batches them |
+| `CYGNET_GROUP_SIZE` | 20 | options read in one pass; 13 to 20, so that 255 options fit in one final pass |
+| `CYGNET_MAX_BODY` | 16777216 | largest request body, in bytes (16 MiB) |
 | `CYGNET_MODEL_NAME`, `CYGNET_MODEL_DESCRIPTION`, `CYGNET_MODEL_RELEASE_DATE` | `SHIM_MODEL`, … | what `GET /v1/models` lists |
+
+**Status codes.** 401 without a valid key; 422 for a request the API does not accept (an unknown question type, more
+than 255 options or 10 levels, over the context limit); vLLM's 401, 403 and 429 pass through ahead of a 422 in the same
+request, since they concern the server; any other vLLM failure is a 502; 400 for a body that is not JSON, 411 without
+a `Content-Length`, 413 over `CYGNET_MAX_BODY`. Errors are `{"error": "<message>"}`.
 
 The figures above were measured through the benchmark shim; the decision server has been tested against a stand-in
 for vLLM (`python3 shim/test_decision_server.py`, no GPU). Deployments are subject to Google's Gemma Prohibited Use

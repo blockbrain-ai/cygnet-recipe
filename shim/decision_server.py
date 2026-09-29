@@ -19,15 +19,17 @@ adds is what an application needs from the same API, `POST /v1/systemone` and `G
     over the group winners, each shown with its own description; P(option) = P(its group's winner) x P(option |
     its group), and the calibration temperature is applied once to that result.
   - With CYGNET_API_KEY set, requests need `Authorization: Bearer <key>` (401 otherwise); without it any
-    Authorization header is accepted.
+    Authorization header is accepted, and the server refuses to listen beyond localhost unless CYGNET_ALLOW_NO_KEY=1.
+  - CYGNET_MAX_PARALLEL caps the vLLM requests in flight across all requests.
 
 Identity with the benchmark path: one question with at most CYGNET_GROUP_SIZE options, text descriptions and noul
 criteria given false first is read exactly as `cygnet_shim.answer_for` reads it (`test_decision_server.py` compares the
 two on every question type).
 
 Status codes: 422 for a request this server cannot answer (a malformed question, over 255 options, over the model's
-context); 401 as above; vLLM's 401, 403 and 429 pass through; 502 when vLLM fails; 503 when the served model's context
-is below SHIM_MIN_CONTEXT; 400 for a body that is not JSON; 413 for a body over CYGNET_MAX_BODY bytes.
+context); 401 as above; vLLM's 401, 403 and 429 pass through, ahead of a 422 in the same request; 502 when vLLM fails;
+503 when the served model's context is below SHIM_MIN_CONTEXT; 400 for a body that is not JSON or a bad Content-Length;
+411 without a Content-Length; 413 for a body over CYGNET_MAX_BODY bytes.
 
     SHIM_VLLM=http://127.0.0.1:8890/v1/chat/completions SHIM_MODEL=cygnet SHIM_TEMPERATURE=3.4 \\
         python3 shim/decision_server.py
@@ -41,6 +43,7 @@ import importlib.util
 import json
 import os
 import sys
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -59,12 +62,16 @@ MODEL_NAME = os.environ.get("CYGNET_MODEL_NAME", shim.MODEL)
 MODEL_DESCRIPTION = os.environ.get("CYGNET_MODEL_DESCRIPTION",
                                    "google/gemma-4-12B-it with a one-token option readout (Cygnet)")
 MODEL_RELEASE_DATE = os.environ.get("CYGNET_MODEL_RELEASE_DATE", "2026-09-24")
+ALLOW_NO_KEY = os.environ.get("CYGNET_ALLOW_NO_KEY", "") == "1"
 MAX_CHOICE_OPTIONS = 255
 MAX_SCORE_LEVELS = 10
-if not 2 <= GROUP_SIZE <= min(len(shim.LETTERS), shim.TOP_LOGPROBS):
-    raise SystemExit(f"CYGNET_GROUP_SIZE must be between 2 and {min(len(shim.LETTERS), shim.TOP_LOGPROBS)}")
+_letters_read = min(len(shim.LETTERS), shim.TOP_LOGPROBS)   # options one pass can return a probability for
+if not 2 <= GROUP_SIZE <= _letters_read or -(-MAX_CHOICE_OPTIONS // GROUP_SIZE) > _letters_read:
+    raise SystemExit(f"CYGNET_GROUP_SIZE must be between {-(-MAX_CHOICE_OPTIONS // _letters_read)} and {_letters_read}, "
+                     f"so that {MAX_CHOICE_OPTIONS} options fit in one final pass over the group winners")
 
 _passes = ThreadPoolExecutor(max_workers=MAX_PARALLEL)    # group passes within a question
+_in_flight = threading.BoundedSemaphore(MAX_PARALLEL)      # every vLLM request, across all requests
 
 
 def _text(value):
@@ -82,8 +89,7 @@ def parse_question(name, q):
     if not isinstance(q, dict):
         raise shim.Unprocessable(f"{where} must be an object")
     qtype = q.get("type")
-    instructions = q.get("instructions")
-    instructions = "" if instructions is None else instructions
+    instructions = q.get("instructions") or ""          # as cygnet_shim.answer_for
     criteria = q.get("criteria")
     if qtype == "choice":
         if not isinstance(criteria, dict) or not criteria:
@@ -133,7 +139,8 @@ def read_pass(state, instructions, items):
     if len(items) == 1:
         return [1.0], {}
     opts = [(shim.LETTERS[i], label, text) for i, (label, text) in enumerate(items)]
-    resp = shim.call_vllm(shim.build_prompt(state, instructions, opts), [letter for letter, _l, _t in opts])
+    with _in_flight:
+        resp = shim.call_vllm(shim.build_prompt(state, instructions, opts), [letter for letter, _l, _t in opts])
     usage = resp.get("usage") or {}
     try:
         # a list of (token, logprob) pairs: Gemma-4 has two tokens that decode to each letter (cygnet_shim.answer_for)
@@ -219,8 +226,7 @@ def evaluate(body):
     if context < shim.MIN_CONTEXT:
         raise shim.UpstreamError(f"the server's max_model_len is {context}, below SHIM_MIN_CONTEXT={shim.MIN_CONTEXT};"
                                  f" restart vLLM with a larger --max-model-len", 503)
-    state = body.get("state")
-    state = "" if state is None else state
+    state = body.get("state") or ""                    # as cygnet_shim
 
     def one(name):
         qtype, instructions, items, legend = parsed[name]
@@ -232,11 +238,12 @@ def evaluate(body):
     with ThreadPoolExecutor(max_workers=max(1, min(MAX_PARALLEL, len(parsed)))) as pool:
         results = list(pool.map(one, parsed))
     errors = [e for _n, _r, e in results if e is not None]
+    # vLLM's own 401, 403 and 429 pass through first (the server's auth or load, which the caller must see); then a 422,
+    # which a retry cannot fix; then any other upstream failure
+    passed = [e for e in errors if isinstance(e, shim.UpstreamError) and e.status in (401, 403, 429)]
     unprocessable = [e for e in errors if isinstance(e, shim.Unprocessable)]
-    if unprocessable:                  # deterministic: a retry cannot fix it, so it is reported first
-        raise unprocessable[0]
     if errors:
-        raise errors[0]
+        raise (passed or unprocessable or errors)[0]
     answers, input_tokens, output_tokens = {}, 0, 0
     for name, (ans, tokens), _e in results:
         answers[name] = ans
@@ -277,13 +284,20 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self.path.startswith("/v1/systemone"):
             return self._send(404, {"error": "not found"})
-        n = int(self.headers.get("Content-Length") or 0)
-        if n > MAX_BODY:
-            self.close_connection = True           # the unread body must not be taken for the next request
-            return self._send(413, {"error": f"request body over {MAX_BODY} bytes"})
-        raw = self.rfile.read(n)
+        length = self.headers.get("Content-Length")
+        refuse = None
         if not self._authorised():
-            return self._send(401, {"error": "missing or invalid API key"})
+            refuse = (401, "missing or invalid API key")
+        elif length is None:
+            refuse = (411, "a Content-Length header is required")
+        elif not length.strip().isdecimal():
+            refuse = (400, "Content-Length is not a non-negative integer")
+        elif int(length) > MAX_BODY:
+            refuse = (413, f"request body over {MAX_BODY} bytes")
+        if refuse:
+            self.close_connection = True           # the unread body must not be taken for the next request
+            return self._send(refuse[0], {"error": refuse[1]})
+        raw = self.rfile.read(int(length))
         try:
             body = json.loads(raw or b"{}")
         except ValueError as e:
@@ -302,8 +316,9 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    if HOST not in ("127.0.0.1", "localhost", "::1") and not API_KEY:
-        sys.stderr.write("decision-server: listening beyond localhost without CYGNET_API_KEY\n")
+    if HOST not in ("127.0.0.1", "localhost", "::1") and not API_KEY and not ALLOW_NO_KEY:
+        raise SystemExit(f"decision-server: refusing to listen on {HOST} without CYGNET_API_KEY "
+                         f"(set CYGNET_ALLOW_NO_KEY=1 when something in front of it checks access)")
     srv = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"Cygnet decision server on {HOST}:{PORT} -> {shim.VLLM} (model {shim.MODEL}, T {shim.TEMPERATURE},"
           f" groups of {GROUP_SIZE})", flush=True)
