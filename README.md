@@ -102,7 +102,8 @@ python3 shim/decision_server.py
 - **Up to 255 options.** Up to 20 are read in one pass (vLLM returns 20 log-probabilities). Past that the options are
   read in groups of near-equal size, then once more over the group winners, each with its own description:
   `P(option) = P(its group's winner) × P(option | its group)`, with the temperature applied once to the result. That
-  is `ceil(K / 20) + 1` passes; the temperature was fitted on single-pass reads only.
+  is `ceil(K / 20) + 1` passes. The calibration temperature was fitted on single-pass reads; on grouped reads it
+  lowered calibration error on 77 options and raised it on 150 (below), so it is not established there.
 - On one question with at most 20 options, text descriptions and noul options given false first, it returns exactly
   what the benchmark shim returns (`shim/test_decision_server.py` checks this on every question type).
 
@@ -121,12 +122,22 @@ than 255 options or 10 levels, over the context limit); vLLM's 401, 403 and 429 
 request, since they concern the server; any other vLLM failure is a 502; 400 for a body that is not JSON, 411 without
 a `Content-Length`, 413 over `CYGNET_MAX_BODY`. Errors are `{"error": "<message>"}`.
 
-The figures above were measured through the benchmark shim; the decision server has been tested against a stand-in
-for vLLM (`python3 shim/test_decision_server.py`, no GPU). Deployments are subject to Google's Gemma Prohibited Use
-Policy (`NOTICE.md`).
+**Measured on the real model** (one H100 NVL, the settings above; `checks/decision-server/`):
+
+- JevBench's CLI scored 203/231 through the decision server, with the same probabilities as the benchmark shim on all
+  231 items.
+- Grouped reads on 400 BANKING77 test messages with 20 intents each: 87.00 % grouped against 86.50 % in one pass (same
+  option chosen on 373). All 77 BANKING77 intents: 73.50 %; all 150 CLINC150 intents: 91.25 %.
+- Expected calibration error at T 3.4 against T 1: 0.067 against 0.249 on 77 intents, 0.171 against 0.074 on 150,
+  where confidence sits below accuracy.
+- Latency with 20 options: 0.062 s p50 for one client; 38.5 requests/s at 0.209 s p50 for 8 clients. With 77 options
+  (5 passes): 0.193 s p50 for one client.
+
+`python3 shim/test_decision_server.py` tests the server against a stand-in for vLLM (no GPU). Deployments are subject to
+Google's Gemma Prohibited Use Policy (`NOTICE.md`).
 
 **Serving on other backends:** forward `chat_template_kwargs: {"enable_thinking": false}` unchanged. llama.cpp turns
-thinking on by default, which overrides Gemma-4's template; in a reproduction reported in issue #1 the answer
+thinking on by default, which overrides Gemma-4's template; in a reproduction reported by @notf0und in issue #1 the answer
 position was then led by a thinking marker and the easy tier fell from 48/48 to 42/48.
 
 ## How the readout works

@@ -1,0 +1,28 @@
+out: out/
+A A1: 231 records; correct 203
+A A2: 231 records; correct 203
+A A3: 231 records; correct 203
+A server (A2) vs shim (A3): 0 of 231 predictions differ []; largest probability difference 0
+A shim (A1) vs shim (A3), run-to-run: 0 of 231 predictions differ []; largest probability difference 0.0176
+A PASS: True   (A2 and A3 agree on all 231, and |dp|(A2, A3) <= |dp|(A1, A3))
+B B77: 77 options; latency p50 0.193 s p95 0.206 s; mean input tokens per request 1313
+   T 1.0: n 400 (non-200 0); accuracy 73.50 %; mean top p 0.984; ECE 0.249; NLL 2.730
+   T 3.4: n 400 (non-200 0); accuracy 73.50 %; mean top p 0.728; ECE 0.067; NLL 1.154
+B C150: 150 options; latency p50 0.267 s p95 0.280 s; mean input tokens per request 1990
+   T 1.0: n 400 (non-200 0); accuracy 91.25 %; mean top p 0.985; ECE 0.074; NLL 0.584
+   T 3.4: n 400 (non-200 0); accuracy 91.25 %; mean top p 0.741; ECE 0.171; NLL 0.499
+B B20-single: 20 options; latency p50 0.059 s p95 0.065 s; mean input tokens per request 297
+   T 1.0: n 400 (non-200 0); accuracy 86.50 %; mean top p 0.987; ECE 0.125; NLL 1.224
+   T 3.4: n 400 (non-200 0); accuracy 86.50 %; mean top p 0.815; ECE 0.070; NLL 0.581
+B B20-grouped: 20 options; latency p50 0.142 s p95 0.155 s; mean input tokens per request 556
+   T 1.0: n 400 (non-200 0); accuracy 87.00 %; mean top p 0.983; ECE 0.118; NLL 1.193
+   T 3.4: n 400 (non-200 0); accuracy 87.00 %; mean top p 0.846; ECE 0.056; NLL 0.533
+B20 paired, 400 items: single 346 correct, grouped 348; same top option on 373; right only single 10, right only grouped 12 (exact McNemar p 0.832); single minus grouped -0.50 points
+B grouping fit to ship: True   (grouped no more than 3 points below single pass)
+B B77: ECE at T 3.4 below T 1 (0.067 vs 0.249)
+B C150: ECE at T 3.4 not below T 1 (0.171 vs 0.074)
+C c1: 1 clients, 200 requests of 20 options via 8010: 16.3 requests/s; latency p50 0.062 s, p95 0.069 s, p99 0.084 s; non-200 0; accuracy 85.0 %
+C c2: 8 clients, 400 requests of 20 options via 8010: 38.5 requests/s; latency p50 0.209 s, p95 0.255 s, p99 0.968 s; non-200 0; accuracy 85.2 %
+C c3: 32 clients, 400 requests of 20 options via 8010: 33.5 requests/s; latency p50 0.623 s, p95 3.975 s, p99 4.300 s; non-200 0; accuracy 88.2 %
+C c4: 32 clients, 400 requests of 20 options via 8013: 37.0 requests/s; latency p50 0.562 s, p95 3.339 s, p99 3.808 s; non-200 0; accuracy 85.8 %
+C c5: 8 clients, 200 requests of 77 options via 8010: 8.3 requests/s; latency p50 0.933 s, p95 1.140 s, p99 1.467 s; non-200 0; accuracy 71.5 %

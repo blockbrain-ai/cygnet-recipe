@@ -10,12 +10,13 @@
 - **Benchmark: [JevBench](https://github.com/fstandhartinger/jevbench)**, whose CLI and scoring produced every public-set
   figure in the README.
 
-- **What the decision server had to do, and how to go past 26 options: Fabián Gonzalo Artur de la Villarmois
-  ([@notf0und](https://github.com/notf0und))**, in [issue #1](https://github.com/blockbrain-ai/cygnet-recipe/issues/1)
-  and [pull request #2](https://github.com/blockbrain-ai/cygnet-recipe/pull/2): answering every named question,
-  `confidence`, optional noul criteria, the score and usage fields, composing one-token passes over groups of options,
-  and the llama.cpp thinking note in the README. `shim/decision_server.py` is our own implementation of those ideas; it
-  contains no code from the pull request.
+- **The decision server was prompted by Fabián Gonzalo Artur de la Villarmois
+  ([@notf0und](https://github.com/notf0und))**, whose [issue #1](https://github.com/blockbrain-ai/cygnet-recipe/issues/1)
+  and [pull request #2](https://github.com/blockbrain-ai/cygnet-recipe/pull/2) set out what applications need from it:
+  answering every named question, `confidence`, optional noul criteria, the score and usage fields, and composing
+  one-token passes over groups of options. The llama.cpp thinking note in the README comes from the same issue.
+  `shim/decision_server.py` is our own implementation of those ideas; it contains no code from the pull request. Thank
+  you, Fabián.
 
 What is ours: the shim (`shim/cygnet_shim.py`, MIT), the decision server (`shim/decision_server.py`, MIT), their
 tests, the calibration temperature and its fitting data (our own generated items), and this packaging.
