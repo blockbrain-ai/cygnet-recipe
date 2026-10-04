@@ -1,9 +1,67 @@
-# Cygnet — typed decisions from frozen Gemma-4-12B, one token per decision
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="showcase/hero-dark.svg">
+    <img alt="Cygnet: typed decisions from frozen Gemma-4-12B, one token per decision. No. 1 overall on JevBench v1.5.4 at 73.70, ahead of Winnow-12B Q8 at 73.23 (a statistical tie) and Jev 1.13.0 at 72.13." src="showcase/hero-light.svg" width="880">
+  </picture>
+</p>
+
+<p align="center">
+  <a href="#where-it-stands"><img alt="JevBench v1.5.4: No. 1 of 106" src="https://img.shields.io/badge/JevBench_v1.5.4-No._1_of_106-a26f00?style=flat-square"></a>
+  <img alt="Weights: Gemma-4-12B-it, stock" src="https://img.shields.io/badge/weights-Gemma--4--12B--it%2C_stock-46506a?style=flat-square">
+  <img alt="Serving: vLLM 0.30.0" src="https://img.shields.io/badge/serving-vLLM_0.30.0-46506a?style=flat-square">
+  <a href="LICENSE"><img alt="Licence: MIT" src="https://img.shields.io/badge/licence-MIT-46506a?style=flat-square"></a>
+</p>
+
+<p align="center">
+  <a href="#where-it-stands">Where it stands</a> ·
+  <a href="#run-it">Run it</a> ·
+  <a href="#serving-applications">Serving applications</a> ·
+  <a href="#how-the-readout-works">How the readout works</a> ·
+  <a href="#disclosures">Disclosures</a>
+</p>
 
 Cygnet answers JevBench's typed decision requests (`choice`, `noul`, `score`) with **frozen
 `google/gemma-4-12B-it`**, no fine-tuning, served by **unmodified vLLM 0.30.0**. A small shim presents the options
 as letters, reads the model's own probability for each letter at a single answer position, and applies one
 calibration temperature. Cost is input tokens only, with one output token per decision.
+
+## Where it stands
+
+**No. 1 overall of 106 ranked systems on [JevBench v1.5.4](https://benchmarkheaven.com/jev-models/v1.5.4)**, the
+official release, measured by the benchmark's evaluators on their own GPU in an offline, read-only container: 1,624
+decisions, 904 open and 720 sealed, all answered. Winnow-12B Q8, a fine-tune of the same Gemma-4-12B-it, is second;
+the board calls the two joint leaders, a statistical tie by its own paired bootstrap. Every other system in the top
+ten is fine-tuned or proprietary. The page opens on a different view, Capability (Intelligence and Calibration
+alone, among systems within twice Jev's cost and latency), where Jev 1.13.0 leads at 80.0 and Cygnet is third at 79.0.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="showcase/board-dark.svg">
+    <img alt="Bar chart of the official JevBench v1.5.4 score with 95% bootstrap intervals: 1 Cygnet (stock weights) 73.70, 2 Winnow-12B Q8 (Gemma-4-12B fine-tune) 73.23, 3 Jev 1.13.0 (proprietary) 72.13, 4 JevK5 v0.3 71.90, 5 Plumb-4B 71.56, 6 Jev-Omni 71.50, 7 decider-4b v2 71.28, 8 Decision 4B v1.2 70.83, 9 Imajev-4B 70.39, 10 Decision 4B v1.1 70.39, then 34 GPT-6 Luna low effort 40.48, 51 Gemini 3.1 Flash-Lite 19.58, 68 DeepSeek V4.1 Flash 6.65." src="showcase/board-light.svg" width="880">
+  </picture>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="showcase/axes-dark.svg">
+    <img alt="The four axes behind the score, out of 100. Cygnet: Intelligence 71.1, Calibration 87.0, Speed 91.0, Cost 56.4. Jev 1.13.0: 72.0, 88.0, 83.8, 54.7. Winnow-12B Q8: 74.4, 84.1, 86.1, 56.6. GPT-6 Luna, low effort: 95.3, 94.9, 73.2, 39.1." src="showcase/axes-light.svg" width="880">
+  </picture>
+</p>
+
+| rank | system | score | Intelligence | Calibration | Speed | Cost |
+|---:|---|---:|---:|---:|---:|---:|
+| 1 | **Cygnet** | **73.70** | 71.1 | 87.0 | 91.0 | 56.4 |
+| 2 | Winnow-12B Q8 | 73.23 | 74.4 | 84.1 | 86.1 | 56.6 |
+| 3 | Jev 1.13.0 | 72.13 | 72.0 | 88.0 | 83.8 | 54.7 |
+| 34 | GPT-6 Luna, low effort | 40.48 | 95.3 | 94.9 | 73.2 | 39.1 |
+| 51 | Gemini 3.1 Flash-Lite | 19.58 | 77.6 | 74.7 | 80.0 | 29.8 |
+| 68 | DeepSeek V4.1 Flash | 6.65 | 93.7 | 96.9 | 69.4 | 19.1 |
+
+From the release's [aggregate results](https://benchmarkheaven.com/api/jevbench/v1.5.4), sha256
+`0cf210b76bf85084a5f3fb40fb109e9a2c2f93df42ff6628696377666e89db45`, retrieved 2026-09-30. The score is the
+equal-weight harmonic mean of the four axes; under the release's alternative weighting, option B (Intelligence 40 %),
+Cygnet is second. How each system is built is our reading of its row. The public-set figures below are our own runs;
+the official score also covers the 720 sealed decisions. `showcase/render.py` draws the pictures from these numbers.
 
 ## Measured (JevBench's public set)
 
@@ -141,6 +199,13 @@ thinking on by default, which overrides Gemma-4's template; in a reproduction re
 position was then led by a thinking marker and the easy tier fell from 48/48 to 42/48.
 
 ## How the readout works
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="showcase/readout-dark.svg">
+    <img alt="One JevBench public item, original-extraction-01-1: 'The final arrangement is depot pickup, replacing the earlier courier idea.' Options A courier, B pickup, C post, D unknown. Gemma-4-12B-it answers with one token limited to those letters; the shim sums the tokens for each letter and applies T = 3.4. Before the temperature: pickup 99.95%, courier 0.03%, unknown 0.02%, post under 0.01%. As returned: pickup 82.7%, courier 7.58%, unknown 7.04%, post 2.66%." src="showcase/readout-light.svg" width="880">
+  </picture>
+</p>
 
 For each decision the shim sends one chat request with the state, the instructions and the options lettered A, B,
 C…, asking for one letter. vLLM masks the answer position to the option letters (`structured_outputs.choice`) and
