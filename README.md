@@ -136,6 +136,20 @@ vLLM failure is a 502, which counts toward the runner's three-consecutive-failur
 
 **Tests** (no GPU): `python3 shim/test_shim.py`.
 
+## Apple Silicon (Metal)
+
+The optional [Apple Metal backend](metal/README.md) runs the same shim with Google's
+official Gemma 4 12B IT QAT Q4_0 checkpoint on a Mac. It is adapted from
+[GemmaJev](https://github.com/dashidhy/GemmaJev) and preserves Cygnet's prompt,
+letter-probability aggregation and calibration temperature. The guide includes
+pinned model/runtime setup and public JevBench reproduction commands.
+
+On an M2 Pro with 16 GB memory, the 231-item public subset scored **198/231
+(85.71%)**, compared with **203–204/231** in the existing pinned BF16 GPU runs.
+All 231 requests were valid. This is a public-subset portability result, not a
+full JevBench leaderboard score; [metrics and limitations](metal/README.md#measured-public-subset-result)
+include the calibration gap and local timing measurements.
+
 ## Serving applications
 
 `shim/cygnet_shim.py` is the file the figures above were measured with, and it stays as it is. For applications,

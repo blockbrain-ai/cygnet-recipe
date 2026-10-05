@@ -1,0 +1,74 @@
+{
+  "host": {
+    "system": "Darwin",
+    "macos_version": "26.6.2",
+    "architecture": "arm64",
+    "chip": "Apple M2 Pro",
+    "memory_bytes": 17179869184,
+    "python": "3.14.0"
+  },
+  "upstream_cygnet_commit": "10b4099a61e7dca6a82032b54c74dc0a8c496d4b",
+  "gemmajev_source_commit": "5dee9056f66495112048b5bfaa48058164be6977",
+  "jevbench_commit": "2fa63fa3226cb369795525ed011800f57dcbd894",
+  "model": {
+    "repository": "google/gemma-4-12B-it-qat-q4_0-gguf",
+    "revision": "29d097773436b69ff9feafd636ab4cf873786537",
+    "filename": "gemma-4-12b-it-qat-q4_0.gguf",
+    "size_bytes": 6975879296,
+    "sha256": "93567e57a8fe10b23569b9d9ec38cd005deedf71e29477c421a4b83f418a538b"
+  },
+  "runtime": {
+    "runtime_revision": "8086439a4cea94c71a5dfb8fe4ad1546aebd640f",
+    "worker_source_sha256": "7d49388baee5852590df8c78df9e719991f636e0deebfeb56501ca25352c21ac",
+    "runtime_patches": [],
+    "chat_template_revision": "707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+    "chat_template_sha256": "ae53464bf3be25802b3a5b37def7fd89667067d7577049b3b2d74c4d8de4c6d4",
+    "thinking": false,
+    "readout": "prefill_only_exact_letter_tokens",
+    "generated_tokens": 0,
+    "context_size": 4096
+  },
+  "settings": {
+    "context_size": 4096,
+    "threads": 4,
+    "gpu_layers_requested": 99,
+    "n_batch": 512,
+    "n_ubatch": 128,
+    "kv_prefix_reuse": true,
+    "top_logprobs": 20,
+    "calibration_temperature": 3.4,
+    "thinking": false,
+    "generated_tokens_per_request": 0,
+    "inter_request_delay_s": 0.5
+  },
+  "shim_sha256": "34816429ed14e0aaecb82b50f0a40e7b33055170f0698dbdc6cb5dedbb2b1ef3",
+  "server_sha256": "a82621baa0eaab0ea74692b276d2ceb1710a85a51a97fc761a4cec92e38914e6",
+  "preflight": {
+    "n": 231,
+    "max_prompt_tokens": 3909,
+    "synthetic_cache_checks": [
+      {
+        "probabilities": {
+          "0": 1.3328471863775977e-07,
+          "1": 0.9999998667152814
+        },
+        "cached_vs_fresh_max_difference": 5.148959036915812e-11,
+        "reused_tokens": 121
+      },
+      {
+        "probabilities": {
+          "0": 1.0151493329794103e-07,
+          "1": 0.9999998454518372,
+          "2": 5.303322956275881e-08
+        },
+        "cached_vs_fresh_max_difference": 4.0846870330568663e-10,
+        "reused_tokens": 119
+      }
+    ]
+  },
+  "notes": [
+    "Public 231-item subset only, not the full JevBench leaderboard.",
+    "Single quality run on a normal desktop session; latency is diagnostic, not an isolated hardware comparison.",
+    "Official HF token counts match all 231 native prompts. GPU reference usage reports one additional prompt token on every item; reference prompt token IDs are unavailable."
+  ]
+}

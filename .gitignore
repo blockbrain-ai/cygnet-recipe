@@ -1,2 +1,8 @@
 __pycache__/
 *.pyc
+
+# Local Metal runtime, model assets, and experiments
+.runtime/
+.models/
+.venv/
+.DS_Store
