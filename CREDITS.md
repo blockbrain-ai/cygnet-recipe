@@ -7,6 +7,10 @@
   option letters from a single forward pass instead of asking it to write the answer. Cygnet does the same over stock
   vLLM. The idea is theirs; the code in `shim/` is ours.
 - **Serving: [vLLM](https://github.com/vllm-project/vllm)** 0.30.0, unmodified.
+- **Optional Apple Metal backend: [GemmaJev](https://github.com/dashidhy/GemmaJev)** (MIT),
+  by Hongyuan Du. The resident llama.cpp worker and prefix-cache approach in `metal/`
+  are adapted from GemmaJev, with its license notice retained. This backend uses
+  Google's official QAT Q4_0 checkpoint and leaves Cygnet's shim and calibration unchanged.
 - **Benchmark: [JevBench](https://github.com/fstandhartinger/jevbench)**, whose CLI and scoring produced every public-set
   figure in the README.
 

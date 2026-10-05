@@ -1,0 +1,48 @@
+cmake_minimum_required(VERSION 3.20)
+project(cygnet_metal LANGUAGES C CXX)
+
+if(NOT APPLE OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)$")
+    message(FATAL_ERROR "This backend requires macOS on Apple Silicon")
+endif()
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CYGNET_LLAMA_SOURCE "" CACHE PATH "Private, unmodified pinned llama.cpp source")
+set(CYGNET_LLAMA_REVISION "8086439a4cea94c71a5dfb8fe4ad1546aebd640f")
+set(revision_file "${CYGNET_LLAMA_SOURCE}/.cygnet-revision")
+if(NOT EXISTS "${revision_file}")
+    message(FATAL_ERROR "Prepare source with metal/build.sh")
+endif()
+file(READ "${revision_file}" revision)
+string(STRIP "${revision}" revision)
+if(NOT revision STREQUAL CYGNET_LLAMA_REVISION)
+    message(FATAL_ERROR "llama.cpp revision does not match the pinned revision")
+endif()
+# GemmaJev uses a different full-vocabulary readout patch. Cygnet does not need
+# that patch: retain the official Gemma 4 graph, including logit softcapping and
+# suppression of media output tokens. Refuse that patched source explicitly.
+file(SHA256 "${CYGNET_LLAMA_SOURCE}/src/models/gemma4.cpp" gemma4_hash)
+if(NOT gemma4_hash STREQUAL "64e195edca316acf902c9339c123db1bc820a6518eff825bf7886f136009b333")
+    message(FATAL_ERROR "Gemma 4 graph differs from the unmodified pinned source")
+endif()
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/worker.cpp" "${revision_file}"
+    "${CYGNET_LLAMA_SOURCE}/src/models/gemma4.cpp")
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+foreach(feature TESTS EXAMPLES TOOLS SERVER APP COMMON)
+    set(LLAMA_BUILD_${feature} OFF CACHE BOOL "" FORCE)
+endforeach()
+set(LLAMA_CURL OFF CACHE BOOL "" FORCE)
+set(LLAMA_OPENSSL OFF CACHE BOOL "" FORCE)
+set(GGML_BACKEND_DL OFF CACHE BOOL "" FORCE)
+set(GGML_METAL ON CACHE BOOL "" FORCE)
+set(GGML_METAL_EMBED_LIBRARY ON CACHE BOOL "" FORCE)
+add_subdirectory("${CYGNET_LLAMA_SOURCE}" llama EXCLUDE_FROM_ALL)
+file(SHA256 "${CMAKE_CURRENT_SOURCE_DIR}/worker.cpp" worker_hash)
+add_executable(cygnet-metal-worker worker.cpp)
+set_target_properties(cygnet-metal-worker PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/staging")
+target_include_directories(cygnet-metal-worker PRIVATE "${CYGNET_LLAMA_SOURCE}/vendor")
+target_link_libraries(cygnet-metal-worker PRIVATE llama)
+target_compile_definitions(cygnet-metal-worker PRIVATE
+    CYGNET_LLAMA_REVISION="${CYGNET_LLAMA_REVISION}"
+    CYGNET_WORKER_SHA256="${worker_hash}")
+target_compile_options(cygnet-metal-worker PRIVATE -Wall -Wextra -Wpedantic)
