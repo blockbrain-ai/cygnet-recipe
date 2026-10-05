@@ -39,12 +39,8 @@ if [[ ! -f "$source_dir/include/llama.h" ]]; then
         if [[ -n "$override" ]]; then
             if [[ -f "$override" ]]; then
                 archive="$override"
-            elif [[ -d "$override" && -f "$(dirname "$override")/llama.cpp-$revision.tar.gz" ]]; then
-                # Accept GemmaJev's private source directory but extract its clean
-                # adjacent archive, avoiding its project-specific runtime patches.
-                archive="$(dirname "$override")/llama.cpp-$revision.tar.gz"
             else
-                printf 'CYGNET_LLAMA_SOURCE needs a pinned Git checkout, archive, or source directory with its adjacent archive.\n' >&2
+                printf 'CYGNET_LLAMA_SOURCE needs a pinned Git checkout or archive.\n' >&2
                 exit 1
             fi
         elif [[ ! -f "$archive" ]]; then

@@ -109,15 +109,15 @@ token-for-token parity with their vLLM run. The pinned GGUF vocabulary and BPE
 merges match the official HF tokenizer.
 
 The [run archive](../runs/metal-m2-pro-qat-q4_0/) contains original per-item
-probabilities and timing records, the CLI manifest, model/runtime provenance,
-and an audited comparison against both pinned GPU references. It contains no
-model files, task passages, or private/sealed data. Recompute its summary without
-loading a model:
+probabilities and timing records, the CLI manifest, and model/runtime provenance.
+It contains no model files, task passages, or private/sealed data. With the pinned
+JevBench checkout below, summarize the saved records using its existing CLI,
+without loading a model:
 
 ```bash
-python3 metal/summarize.py --jevbench .runtime/jevbench \
-  --results runs/metal-m2-pro-qat-q4_0/results.jsonl \
-  --manifest runs/metal-m2-pro-qat-q4_0/manifest.json
+PYTHONPATH=.runtime/jevbench python3 -m jevbench.cli summarize \
+  --tasks .runtime/jevbench/datasets/public/easy.jsonl,.runtime/jevbench/datasets/public/original.jsonl,.runtime/jevbench/datasets/public/hard.jsonl \
+  --results runs/metal-m2-pro-qat-q4_0/results.jsonl
 ```
 
 ## Reproduce the public JevBench run
@@ -139,16 +139,16 @@ PYTHONPATH=.runtime/jevbench python3 -m jevbench.cli run \
   --manifest .runtime/jevbench-metal/manifest.json \
   --run-label cygnet-metal --delay-s 0.5
 
-python3 metal/summarize.py --jevbench .runtime/jevbench \
-  --results .runtime/jevbench-metal/results.jsonl \
-  --manifest .runtime/jevbench-metal/manifest.json \
-  --output .runtime/jevbench-metal/summary.json
+PYTHONPATH=.runtime/jevbench python3 -m jevbench.cli summarize \
+  --tasks .runtime/jevbench/datasets/public/easy.jsonl,.runtime/jevbench/datasets/public/original.jsonl,.runtime/jevbench/datasets/public/hard.jsonl \
+  --results .runtime/jevbench-metal/results.jsonl
 ```
 
 The half-second pause between requests reduces sustained load; it is outside
-the runner's per-request latency measurement. The audit verifies the pinned
-checkout, dataset hashes, every task ID and the official per-item scoring,
-then compares against both existing pinned GPU runs. This is a public-subset
+the runner's per-request latency measurement. The CLI manifest records the dataset
+hash and run settings. To summarize a GPU reference, use its existing
+`runs/l40s-pinned/results.jsonl` or `runs/a6000-pinned/results.jsonl` with the same
+summary command. This is a public-subset
 portability check, not a full or sealed JevBench score. Local latency must not
 be interpreted as a hardware-normalized comparison with the GPU runs.
 
